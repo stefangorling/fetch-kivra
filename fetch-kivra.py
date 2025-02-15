@@ -348,6 +348,24 @@ try:
                         logging.warning("Kvitto saknar key, hoppar över")
                         continue
                     
+                    # Skapa filnamn och mappar baserat på datum och butiksnamn
+                    date = format_date(receipt.get('purchaseDate', 'unknown_date'))
+                    store = receipt.get('store', {}).get('name', 'unknown_store')
+                    safe_store = clean_filename(store)
+                    base_filename = f"{date}_{safe_store}_{receipt_key}"
+                    
+                    # Skapa undermappar
+                    store_dir = os.path.join(receipts_dir, safe_store)
+                    store_json_dir = os.path.join(json_dir, safe_store)
+                    os.makedirs(store_dir, exist_ok=True)
+                    os.makedirs(store_json_dir, exist_ok=True)
+                    
+                    # Kolla om filen redan finns
+                    json_filepath = os.path.join(store_json_dir, f"{base_filename}.json")
+                    if os.path.exists(json_filepath):
+                        print(f"Skippar kvitto {base_filename} - redan hämtat")
+                        continue
+                    
                     print(f"\nBearbetar kvitto: {receipt_key}")
                     
                     # 1. Hämta detaljerad kvittoinformation via GraphQL
@@ -599,26 +617,6 @@ try:
                     
                     receipt_details = detail_data.get('data', {}).get('receiptV2', {})
                     
-                    # För kvitton:
-                    # Skapa filnamn och mappar baserat på datum och butiksnamn
-                    date = format_date(receipt_details.get('content', {}).get('header', {}).get('isoDate', 'unknown_date'))
-                    store = receipt_details.get('sender', {}).get('name', 'unknown_store')
-                    safe_store = clean_filename(store)
-                    
-                    # Skapa undermapp för butiken
-                    store_dir = os.path.join(receipts_dir, safe_store)
-                    store_json_dir = os.path.join(json_dir, safe_store)
-                    os.makedirs(store_dir, exist_ok=True)
-                    os.makedirs(store_json_dir, exist_ok=True)
-                    
-                    base_filename = f"{date}_{safe_store}_{receipt_key}"
-                    
-                    # Spara JSON i butiksspecifik json-mapp
-                    json_filepath = os.path.join(store_json_dir, f"{base_filename}.json")
-                    
-                    # Spara PDF i butiksspecifik mapp
-                    pdf_filepath = os.path.join(store_dir, f"{base_filename}.pdf")
-                    
                     # 2. Spara JSON
                     with open(json_filepath, 'w', encoding='utf-8') as f:
                         json.dump(receipt_details, f, ensure_ascii=False, indent=2)
@@ -635,7 +633,7 @@ try:
                     pdf_response = session.get(pdf_url, headers=pdf_headers)
                     
                     if pdf_response.status_code == 200:
-                        with open(pdf_filepath, 'wb') as f:
+                        with open(os.path.join(store_dir, f"{base_filename}.pdf"), 'wb') as f:
                             f.write(pdf_response.content)
                         print(f"Sparade PDF: {base_filename}.pdf")
                     else:
@@ -755,8 +753,6 @@ try:
                         logging.warning("Brev saknar key, hoppar över")
                         continue
                     
-                    print(f"\nBearbetar brev: {letter_key}")
-                    
                     # Skapa filnamn och mappar baserat på datum och avsändare
                     date = format_date(letter.get('receivedAt', 'unknown_date'))
                     sender = letter.get('sender', {}).get('name', 'unknown_sender')
@@ -768,13 +764,13 @@ try:
                     os.makedirs(sender_dir, exist_ok=True)
                     os.makedirs(sender_json_dir, exist_ok=True)
                     
-                    base_filename = f"{date}_{safe_sender}_{letter_key}"
+                    # Kolla om filen redan finns
+                    json_filepath = os.path.join(sender_json_dir, f"{date}_{safe_sender}_{letter_key}.json")
+                    if os.path.exists(json_filepath):
+                        print(f"Skippar brev {date}_{safe_sender}_{letter_key} - redan hämtat")
+                        continue
                     
-                    # Spara JSON i avsändarspecifik json-mapp
-                    json_filepath = os.path.join(sender_json_dir, f"{base_filename}.json")
-                    
-                    # Spara PDF i avsändarspecifik mapp
-                    pdf_filepath = os.path.join(sender_dir, f"{base_filename}.pdf")
+                    print(f"\nBearbetar brev: {letter_key}")
                     
                     # 1. Hämta detaljerad information
                     content_url = f"https://app.api.kivra.com/v1/content/{letter_key}"
@@ -793,7 +789,7 @@ try:
                         # Spara letter-metadata som JSON
                         with open(json_filepath, 'w', encoding='utf-8') as f:
                             json.dump(letter_data, f, ensure_ascii=False, indent=2)
-                        print(f"Sparade JSON: {base_filename}.json")
+                        print(f"Sparade JSON: {date}_{safe_sender}_{letter_key}.json")
                     else:
                         logging.error(f"Kunde inte hämta detaljer för brev {letter_key}. Status: {content_response.status_code}")
                         logging.error(f"Response: {content_response.text}")
@@ -828,10 +824,10 @@ try:
                             
                             if pdf_response.status_code == 200:
                                 # Om det finns flera PDF-filer, lägg till part-index i filnamnet
-                                pdf_filename = base_filename
+                                pdf_filename = f"{date}_{safe_sender}_{letter_key}"
                                 if len([p for p in parts if p.get('content_type') == 'application/pdf']) > 1:
                                     part_index = parts.index(part)
-                                    pdf_filename = f"{base_filename}_part{part_index}"
+                                    pdf_filename = f"{date}_{safe_sender}_{letter_key}_part{part_index}"
                                     
                                 pdf_filepath = os.path.join(sender_dir, f"{pdf_filename}.pdf")
                                 with open(pdf_filepath, 'wb') as f:
