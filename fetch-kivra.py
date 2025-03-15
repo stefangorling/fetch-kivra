@@ -625,7 +625,8 @@ try:
                     # 3. Hämta och spara PDF direkt under Receipts
                     pdf_url = f"https://app.api.kivra.com/v1/user/{actor_key}/receipts/{receipt_key}"
                     pdf_headers = {
-                        'Authorization': f'token {access_token}'
+                        'Authorization': f'token {access_token}',
+                        'Accept': 'application/pdf'
                     }
                     
                     logging.debug(f"PDF Headers: {pdf_headers}")
