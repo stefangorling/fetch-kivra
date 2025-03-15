@@ -62,6 +62,8 @@ ssn = sys.argv[1]
 # Konfiguration
 FETCH_RECEIPTS = True  # Sätt till True för att hämta kvitton
 FETCH_LETTERS = True    # Sätt till True för att hämta brev
+MAX_RECEIPTS = None    # Sätt till ett heltal för att begränsa antalet kvitton som hämtas (None = obegränsat)
+MAX_LETTERS = None     # Sätt till ett heltal för att begränsa antalet brev som hämtas (None = obegränsat)
 
 # Uppdaterad BankID-initiering och QR-hantering
 def display_qr_code(qr_data):
@@ -339,6 +341,11 @@ try:
                 with open(receipts_json_path, 'w', encoding='utf-8') as f:
                     json.dump(receipts, f, ensure_ascii=False, indent=2)
                 print(f"Sparade kvittolista till {receipts_json_path}")
+                
+                # Begränsa antalet kvitton om MAX_RECEIPTS är satt
+                if MAX_RECEIPTS is not None:
+                    print(f"\nBegränsar till {MAX_RECEIPTS} kvitton (av {len(receipt_list)} tillgängliga)")
+                    receipt_list = receipt_list[:MAX_RECEIPTS]
                 
                 # Iterera över varje kvitto
                 print("\nHämtar detaljerad information och PDF för varje kvitto...")
@@ -746,6 +753,11 @@ try:
                     json.dump({"total": total_letters, "list": all_letters}, f, ensure_ascii=False, indent=2)
                 print(f"Sparade brevlista till {letters_json_path}")
                 
+                # Begränsa antalet brev om MAX_LETTERS är satt
+                if MAX_LETTERS is not None:
+                    print(f"\nBegränsar till {MAX_LETTERS} brev (av {len(all_letters)} tillgängliga)")
+                    all_letters = all_letters[:MAX_LETTERS]
+                
                 # Iterera över varje brev för att hämta PDF och detaljer
                 print("\nHämtar PDF och detaljer för varje brev...")
                 for letter in all_letters:
@@ -866,9 +878,3 @@ try:
     os.remove(temp_path)
 except:
     pass
-
-
-
-
-
-
