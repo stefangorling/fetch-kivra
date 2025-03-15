@@ -2,8 +2,7 @@
 
 Simple python script to fetch all Letters and Receipts from Kivra down to a local folder for backup purposes.
 
-##
-Dependencies
+## Dependencies
 ```
-pip install requests qrcode Pillow
+requests qrcode Pillow weasyprint
 ```

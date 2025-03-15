@@ -13,13 +13,20 @@ import base64
 import hashlib
 import secrets
 import json
-
+import io
+from weasyprint import HTML
 
 """
 Url: https://gist.github.com/wassname/1393c4a57cfcbf03641dbc31886123b8
 """
 import unicodedata
 import string
+
+import logging
+# Weasyprint is very log-happy, tune it for error logging only
+logger = logging.getLogger('weasyprint')
+logger.setLevel(logging.ERROR)
+logger.handlers = [logging.FileHandler('./weasyprint.log')] # Remove the default stderr handler
 
 valid_filename_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
 char_limit = 255
@@ -818,9 +825,42 @@ try:
                     files_found = False
                     for part in parts:
                         content_type = part.get('content_type')
-                        if content_type in ['text/plain', 'text/html']:
-                            # Skippa text/plain och text/html parts
-                            continue
+                        if content_type in ['text/plain']:
+                            # Save text/plain content to a file
+                            text_filename = f"{date}_{safe_sender}_{letter_key}"
+                            if len([p for p in parts if p.get('content_type') == 'text/plain']) > 1:
+                                part_index = parts.index(part)
+                                text_filename = f"{date}_{safe_sender}_{letter_key}_part{part_index}"
+                            
+                            text_content = part.get('body', '')
+                            text_filepath = os.path.join(sender_dir, f"{text_filename}.txt")
+                            with open(text_filepath, 'w', encoding='utf-8') as f:
+                                f.write(text_content)
+                            print(f"Sparade text/plain: {text_filename}.txt")
+                        elif content_type == 'text/html':
+                            html_filename = f"{date}_{safe_sender}_{letter_key}"
+                            if len([p for p in parts if p.get('content_type') == 'text/html']) > 1:
+                                part_index = parts.index(part)
+                                html_filename = f"{date}_{safe_sender}_{letter_key}_part{part_index}"
+                            
+                            html_content = part.get('body')
+                            
+                            try:
+                                # Convert HTML to PDF using WeasyPrint
+                                pdf_buffer = io.BytesIO()
+                                HTML(string=html_content).write_pdf(pdf_buffer)
+                                
+                                html_filepath = os.path.join(sender_dir, f"{html_filename}_html.pdf")
+                                with open(html_filepath, 'wb') as f:
+                                    f.write(pdf_buffer.getvalue())
+                                print(f"Sparade HTML som PDF: {html_filename}_html.pdf")
+                            except Exception as e:
+                                html_filepath = os.path.join(sender_dir, f"{html_filename}_html.html")
+                                with open(html_filepath, 'w', encoding='utf-8') as f:
+                                    f.write(html_content)
+                                print(f"Sparade HTML-källa för felsökning: {html_filename}_html.html")
+                                logging.error("Fel när HTML skulle sparas som PDF: %s", str(e))
+
                         elif content_type == 'application/pdf':
                             files_found = True
                             file_key = part.get('key')
