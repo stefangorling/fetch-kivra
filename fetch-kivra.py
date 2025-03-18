@@ -13,13 +13,20 @@ import base64
 import hashlib
 import secrets
 import json
-
+import io
+from weasyprint import HTML
 
 """
 Url: https://gist.github.com/wassname/1393c4a57cfcbf03641dbc31886123b8
 """
 import unicodedata
 import string
+
+import logging
+# Weasyprint is very log-happy, tune it for error logging only
+logger = logging.getLogger('weasyprint')
+logger.setLevel(logging.ERROR)
+logger.handlers = [logging.FileHandler('./weasyprint.log')] # Remove the default stderr handler
 
 valid_filename_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
 char_limit = 255
@@ -62,6 +69,8 @@ ssn = sys.argv[1]
 # Konfiguration
 FETCH_RECEIPTS = True  # Sätt till True för att hämta kvitton
 FETCH_LETTERS = True    # Sätt till True för att hämta brev
+MAX_RECEIPTS = None    # Sätt till ett heltal för att begränsa antalet kvitton som hämtas (None = obegränsat)
+MAX_LETTERS = None     # Sätt till ett heltal för att begränsa antalet brev som hämtas (None = obegränsat)
 
 # Uppdaterad BankID-initiering och QR-hantering
 def display_qr_code(qr_data):
@@ -339,6 +348,11 @@ try:
                 with open(receipts_json_path, 'w', encoding='utf-8') as f:
                     json.dump(receipts, f, ensure_ascii=False, indent=2)
                 print(f"Sparade kvittolista till {receipts_json_path}")
+                
+                # Begränsa antalet kvitton om MAX_RECEIPTS är satt
+                if MAX_RECEIPTS is not None:
+                    print(f"\nBegränsar till {MAX_RECEIPTS} kvitton (av {len(receipt_list)} tillgängliga)")
+                    receipt_list = receipt_list[:MAX_RECEIPTS]
                 
                 # Iterera över varje kvitto
                 print("\nHämtar detaljerad information och PDF för varje kvitto...")
@@ -625,7 +639,8 @@ try:
                     # 3. Hämta och spara PDF direkt under Receipts
                     pdf_url = f"https://app.api.kivra.com/v1/user/{actor_key}/receipts/{receipt_key}"
                     pdf_headers = {
-                        'Authorization': f'token {access_token}'
+                        'Authorization': f'token {access_token}',
+                        'Accept': 'application/pdf'
                     }
                     
                     logging.debug(f"PDF Headers: {pdf_headers}")
@@ -745,6 +760,11 @@ try:
                     json.dump({"total": total_letters, "list": all_letters}, f, ensure_ascii=False, indent=2)
                 print(f"Sparade brevlista till {letters_json_path}")
                 
+                # Begränsa antalet brev om MAX_LETTERS är satt
+                if MAX_LETTERS is not None:
+                    print(f"\nBegränsar till {MAX_LETTERS} brev (av {len(all_letters)} tillgängliga)")
+                    all_letters = all_letters[:MAX_LETTERS]
+                
                 # Iterera över varje brev för att hämta PDF och detaljer
                 print("\nHämtar PDF och detaljer för varje brev...")
                 for letter in all_letters:
@@ -805,9 +825,42 @@ try:
                     files_found = False
                     for part in parts:
                         content_type = part.get('content_type')
-                        if content_type in ['text/plain', 'text/html']:
-                            # Skippa text/plain och text/html parts
-                            continue
+                        if content_type in ['text/plain']:
+                            # Save text/plain content to a file
+                            text_filename = f"{date}_{safe_sender}_{letter_key}"
+                            if len([p for p in parts if p.get('content_type') == 'text/plain']) > 1:
+                                part_index = parts.index(part)
+                                text_filename = f"{date}_{safe_sender}_{letter_key}_part{part_index}"
+                            
+                            text_content = part.get('body', '')
+                            text_filepath = os.path.join(sender_dir, f"{text_filename}.txt")
+                            with open(text_filepath, 'w', encoding='utf-8') as f:
+                                f.write(text_content)
+                            print(f"Sparade text/plain: {text_filename}.txt")
+                        elif content_type == 'text/html':
+                            html_filename = f"{date}_{safe_sender}_{letter_key}"
+                            if len([p for p in parts if p.get('content_type') == 'text/html']) > 1:
+                                part_index = parts.index(part)
+                                html_filename = f"{date}_{safe_sender}_{letter_key}_part{part_index}"
+                            
+                            html_content = part.get('body')
+                            
+                            try:
+                                # Convert HTML to PDF using WeasyPrint
+                                pdf_buffer = io.BytesIO()
+                                HTML(string=html_content).write_pdf(pdf_buffer)
+                                
+                                html_filepath = os.path.join(sender_dir, f"{html_filename}_html.pdf")
+                                with open(html_filepath, 'wb') as f:
+                                    f.write(pdf_buffer.getvalue())
+                                print(f"Sparade HTML som PDF: {html_filename}_html.pdf")
+                            except Exception as e:
+                                html_filepath = os.path.join(sender_dir, f"{html_filename}_html.html")
+                                with open(html_filepath, 'w', encoding='utf-8') as f:
+                                    f.write(html_content)
+                                print(f"Sparade HTML-källa för felsökning: {html_filename}_html.html")
+                                logging.error("Fel när HTML skulle sparas som PDF: %s", str(e))
+
                         elif content_type == 'application/pdf':
                             files_found = True
                             file_key = part.get('key')
@@ -865,9 +918,3 @@ try:
     os.remove(temp_path)
 except:
     pass
-
-
-
-
-
-
